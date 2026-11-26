@@ -14,7 +14,12 @@ import java.awt.Stroke;
  *   <li><b>Joint</b>: will become a powered connection between the two sides of a walker.</li>
  *   <li><b>Scaffold</b>: a building aid that will never be included in a walker; it
  *       separates blocks that should not be assembled together.</li>
+ *   <li><b>Hull Core</b>: the heart of a walker; will open the assembly GUI.</li>
  * </ul>
+ *
+ * <p>Joint, Scaffold and Hull Core are <em>linked</em>: one block occupies the same cell in both
+ * the foreground and background layers. That lets a walker carry two parallel sets of legs,
+ * one per layer, connected through shared joints and the core.
  */
 final class Block {
     private Block() {}
@@ -23,11 +28,15 @@ final class Block {
     static final byte GROUND = 1;
     static final byte JOINT = 2;
     static final byte SCAFFOLD = 3;
+    static final byte HULL_CORE = 4;
 
     private static final Color JOINT_BODY = new Color(72, 72, 72);
     private static final Color JOINT_RING = new Color(215, 215, 215);
     private static final Color JOINT_PLATE = new Color(150, 150, 150);
     private static final Color SCAFFOLD_COLOR = new Color(115, 115, 115);
+    private static final Color CORE_FRAME = new Color(45, 45, 45);
+    private static final Color CORE_PLATE = new Color(120, 120, 120);
+    private static final Color CORE_LIGHT = new Color(240, 175, 40);
 
     static String name(byte b) {
         return switch (b) {
@@ -35,18 +44,19 @@ final class Block {
             case GROUND -> "Ground";
             case JOINT -> "Joint";
             case SCAFFOLD -> "Scaffold";
+            case HULL_CORE -> "Hull Core";
             default -> "Unknown";
         };
     }
 
     /** Opaque blocks completely hide the background layer behind them. */
     static boolean isOpaque(byte b) {
-        return b == GROUND || b == JOINT;
+        return b == GROUND || b == JOINT || b == HULL_CORE;
     }
 
-    /** Whether the block type may be placed in the background layer. */
-    static boolean allowedInBackground(byte b) {
-        return b == AIR || b == GROUND;
+    /** Linked blocks always occupy both layers at once. */
+    static boolean isLinked(byte b) {
+        return b == JOINT || b == SCAFFOLD || b == HULL_CORE;
     }
 
     /** Draws one block of type {@code b} into the square at (x, y) with side {@code s} pixels. */
@@ -85,6 +95,18 @@ final class Block {
                 g.drawLine(x + i, y + i, x + s - i - 1, y + s - i - 1);
                 g.drawLine(x + s - i - 1, y + i, x + i, y + s - i - 1);
                 g.setStroke(old);
+            }
+            case HULL_CORE -> {
+                g.setColor(CORE_FRAME);
+                g.fillRect(x, y, s, s);
+                int m = Math.max(2, s / 6);
+                g.setColor(CORE_PLATE);
+                g.fillRect(x + m, y + m, s - 2 * m, s - 2 * m);
+                int c = Math.max(3, s * 3 / 8);
+                g.setColor(CORE_FRAME);
+                g.fillRect(x + (s - c) / 2 - 1, y + (s - c) / 2 - 1, c + 2, c + 2);
+                g.setColor(CORE_LIGHT);
+                g.fillRect(x + (s - c) / 2, y + (s - c) / 2, c, c);
             }
             default -> { }
         }

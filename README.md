@@ -27,7 +27,7 @@ java -jar dist/Javabotics.jar 42       # fixed seed (numbers or any text)
 | W or Space / S | Fly up / down (while flying) |
 | Left click (hold to paint) | Place the selected slot's contents at the cursor: a block goes anywhere (even mid-air); an empty slot is air, so it removes the block |
 | Right click (hold to paint) | Shortcut: always removes the block under the cursor |
-| Tab | Switch editing between the foreground and background layers |
+| Tab | Switch which layer (foreground / background) is in front and edited |
 | E | Spawn a creature at the cursor |
 | 1-9 / mouse wheel / click a slot | Select hotbar slot |
 | F3 | Debug overlay (position, chunk, biome, collision window) |
@@ -50,18 +50,21 @@ Touching the ground while flying ends flight, as in Minecraft.
   - *Terrain layer*: a 2D density field made of a noise height map plus 2D noise scaled by
     the biome's roughness (overhangs, arches, floating islands). Worm caves are carved
     underground.
-- **Layers** (`Chunk`): each chunk has an editable *foreground* (the black blocks everything
-  collides with) and a visual-only *background*, a copy of the terrain as generated, drawn
-  light blue wherever the foreground has been dug out. Tab switches which layer the mouse
-  edits; in background mode foreground blocks are drawn dark gray and background blocks solid
-  dark blue. Only Ground (or air) can be placed in the background.
-- **Blocks** (`Block`): Ground (terrain), plus two walker parts placed from the hotbar (not
-  generated). *Joint* will be a powered connection between two sides of a walker; *Scaffold*
-  is an open frame that will never be included in a walker, used to separate blocks. All
-  non-air blocks are solid for now.
+- **Layers** (`Chunk`): each chunk has a *foreground* (the layer everything collides with)
+  and a *background* (visual only for now). Both start as a copy of the generated terrain and
+  both are editable. Tab switches which layer is in front and edited:
+  - *Foreground mode*: foreground ground is black, background ground shows light blue behind it.
+  - *Background mode*: background ground is drawn in front in #003278, foreground ground black behind it.
+- **Blocks** (`Block`): Ground (terrain), plus three walker parts placed from the hotbar (never
+  generated): *Joint* (will be a powered connection between two sides), *Scaffold* (an open
+  frame that will never be part of a walker; it keeps blocks apart) and *Hull Core* (will open
+  the walker-assembly GUI). These three are **linked**: placing one fills that cell in both
+  layers, and removing or replacing it from either layer clears both. Walkers can then have two
+  parallel sets of legs, one per layer, joined through shared joints and the core. All
+  foreground non-air blocks are solid for now.
 - **Editing** (`Inventory`, `World.setBlock`): the block under the cursor gets a red outline
-  if it isn't air. The 9-slot hotbar starts with Ground, Joint and Scaffold in slots 1-3
-  (unlimited) and slots 4-9 empty (= air). Holding a mouse button keeps editing every tile the
+  if it isn't air. The 9-slot hotbar starts with Ground, Joint, Scaffold and Hull Core in
+  slots 1-4 (unlimited) and slots 5-9 empty (= air). Holding a mouse button keeps editing every tile the
   cursor crosses. Blocks can't be placed into an entity. Edited chunks are marked
   modified and never unloaded, so changes persist.
 - **Entities** (`Entity`, `EntityList`, `Creature`, `Vision`): every dynamic body, the player included,

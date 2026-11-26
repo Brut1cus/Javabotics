@@ -21,8 +21,7 @@ final class Game extends Canvas implements Runnable {
     private static final Color HUD_COLOR = new Color(90, 90, 90);
     private static final Color BACKGROUND_COLOR = new Color(196, 220, 250);
     // Background-editing mode palette.
-    private static final Color BG_MODE_BACKGROUND = new Color(32, 66, 160);
-    private static final Color BG_MODE_FOREGROUND = new Color(82, 82, 82);
+    private static final Color BG_MODE_BACKGROUND = new Color(0x00, 0x32, 0x78);   // #003278
     private static final Color CREATURE_COLOR = new Color(205, 110, 40);
     private static final Color SELECT_COLOR = new Color(230, 30, 30);
     private static final Color BAR_COLOR = new Color(150, 150, 150);
@@ -81,6 +80,7 @@ final class Game extends Canvas implements Runnable {
         inventory.set(0, Block.GROUND);
         inventory.set(1, Block.JOINT);
         inventory.set(2, Block.SCAFFOLD);
+        inventory.set(3, Block.HULL_CORE);
     }
 
     void start() {
@@ -239,14 +239,25 @@ final class Game extends Canvas implements Runnable {
      */
     private void applyEdit(int button, int tx, int ty) {
         byte block = button == MouseEvent.BUTTON1 ? inventory.selectedBlock() : Block.AIR;
-        if (editBackground) {
-            if (!Block.allowedInBackground(block) || world.getBackground(tx, ty) == block) return;
-            world.setBackground(tx, ty, block);
-        } else {
-            if (world.getBlock(tx, ty) == block) return;
-            if (block != Block.AIR && entities.anyOverlapsTile(tx, ty)) return;
+        byte current = editBackground ? world.getBackground(tx, ty) : world.getBlock(tx, ty);
+        if (current == block) return;
+        boolean linked = Block.isLinked(block);
+        // Anything that ends up in the foreground must not be placed into an entity.
+        if ((linked || (!editBackground && block != Block.AIR)) && entities.anyOverlapsTile(tx, ty)) return;
+
+        if (linked) {
+            // Linked blocks occupy the cell in both layers.
             world.setBlock(tx, ty, block);
+            world.setBackground(tx, ty, block);
+            return;
         }
+        if (Block.isLinked(current)) {
+            // Removing or replacing a linked block clears it from both layers.
+            world.setBlock(tx, ty, Block.AIR);
+            world.setBackground(tx, ty, Block.AIR);
+        }
+        if (editBackground) world.setBackground(tx, ty, block);
+        else world.setBlock(tx, ty, block);
     }
 
     private void spawnCreatureAtCursor() {
@@ -368,24 +379,25 @@ final class Game extends Canvas implements Runnable {
         int ty1 = (int) Math.floorDiv(camPxY + h, TILE);
 
         if (editBackground) {
-            // Background mode: foreground = dark gray, background (where visible) = solid dark blue.
-            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h, this::backgroundModeCategory,
-                    new Color[] {null, BG_MODE_BACKGROUND, BG_MODE_FOREGROUND});
-        } else {
-            // Foreground mode: light-blue background shows wherever foreground isn't opaque.
-            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
-                    (x, y) -> showsBackground(x, y) ? 1 : 0, new Color[] {null, BACKGROUND_COLOR});
-            // Ground blocks merged into runs, then the special blocks one tile at a time.
+            // Background mode: the background layer comes to the front. Foreground ground is
+            // black behind it; background ground is #003278 on top.
             drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
                     (x, y) -> world.getBlock(x, y) == Block.GROUND ? 1 : 0, new Color[] {null, Color.BLACK});
-            for (int ty = ty0; ty <= ty1; ty++) {
-                int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
-                for (int tx = tx0; tx <= tx1; tx++) {
-                    byte b = world.getBlock(tx, ty);
-                    if (b != Block.AIR && b != Block.GROUND) {
-                        Block.draw(g, b, (int) ((long) tx * TILE - camPxX), sy, TILE);
-                    }
-                }
+            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
+                    (x, y) -> world.getBackground(x, y) == Block.GROUND ? 1 : 0, new Color[] {null, BG_MODE_BACKGROUND});
+        } else {
+            // Foreground mode: light-blue background ground behind, black foreground ground in front.
+            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
+                    (x, y) -> showsBackground(x, y) ? 1 : 0, new Color[] {null, BACKGROUND_COLOR});
+            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
+                    (x, y) -> world.getBlock(x, y) == Block.GROUND ? 1 : 0, new Color[] {null, Color.BLACK});
+        }
+        // Linked parts (joint, scaffold, hull core) live in both layers: drawn on top in either mode.
+        for (int ty = ty0; ty <= ty1; ty++) {
+            int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
+            for (int tx = tx0; tx <= tx1; tx++) {
+                byte b = world.getBlock(tx, ty);
+                if (Block.isLinked(b)) Block.draw(g, b, (int) ((long) tx * TILE - camPxX), sy, TILE);
             }
         }
 
@@ -437,12 +449,7 @@ final class Game extends Canvas implements Runnable {
     }
 
     private boolean showsBackground(int tx, int ty) {
-        return world.getBackground(tx, ty) != Block.AIR && !Block.isOpaque(world.getBlock(tx, ty));
-    }
-
-    private int backgroundModeCategory(int tx, int ty) {
-        if (world.getBlock(tx, ty) != Block.AIR) return 2;
-        return world.getBackground(tx, ty) != Block.AIR ? 1 : 0;
+        return world.getBackground(tx, ty) == Block.GROUND && !Block.isOpaque(world.getBlock(tx, ty));
     }
 
     /**
@@ -504,7 +511,7 @@ final class Game extends Canvas implements Runnable {
     private void drawEditLabel(Graphics2D g) {
         byte sel = inventory.selectedBlock();
         String text = (editBackground ? "Background" : "Foreground") + " \u00b7 " + Block.name(sel)
-                + (editBackground && !Block.allowedInBackground(sel) ? " (foreground only)" : "");
+                + (Block.isLinked(sel) ? " (both layers)" : "");
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
         int tw = g.getFontMetrics().stringWidth(text);
