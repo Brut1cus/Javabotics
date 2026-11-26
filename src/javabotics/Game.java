@@ -7,6 +7,7 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferStrategy;
 
 /** Game canvas: owns the world, the player, the camera and the fixed-timestep loop. */
@@ -18,7 +19,10 @@ final class Game extends Canvas implements Runnable {
 
     private static final Color PLAYER_COLOR = new Color(128, 128, 128);
     private static final Color HUD_COLOR = new Color(90, 90, 90);
-    private static final Color BACKGROUND_COLOR = new Color(222, 238, 255);
+    private static final Color BACKGROUND_COLOR = new Color(196, 220, 250);
+    // Background-editing mode palette.
+    private static final Color BG_MODE_BACKGROUND = new Color(32, 66, 160);
+    private static final Color BG_MODE_FOREGROUND = new Color(82, 82, 82);
     private static final Color CREATURE_COLOR = new Color(205, 110, 40);
     private static final Color SELECT_COLOR = new Color(230, 30, 30);
     private static final Color BAR_COLOR = new Color(150, 150, 150);
@@ -44,6 +48,14 @@ final class Game extends Canvas implements Runnable {
     private boolean cameraInitialised;
 
     private boolean showDebug;
+    /** Tab toggles which layer the mouse edits. */
+    private boolean editBackground;
+
+    // Hold-to-paint state, indexed by mouse button (1 = left, 3 = right).
+    private final boolean[] painting = new boolean[4];
+    private final boolean[] paintSuppressed = new boolean[4];
+    private final int[] lastPaintX = new int[4];
+    private final int[] lastPaintY = new int[4];
     private double time;
     private int fps;
     private Thread thread;
@@ -66,7 +78,9 @@ final class Game extends Canvas implements Runnable {
         addMouseMotionListener(input.mouseListener);
         addMouseWheelListener(input.mouseListener);
 
-        inventory.set(0, Chunk.SOLID);
+        inventory.set(0, Block.GROUND);
+        inventory.set(1, Block.JOINT);
+        inventory.set(2, Block.SCAFFOLD);
     }
 
     void start() {
@@ -131,6 +145,7 @@ final class Game extends Canvas implements Runnable {
                 case KeyEvent.VK_W -> player.onJumpPressed();
                 case KeyEvent.VK_F3 -> showDebug = !showDebug;
                 case KeyEvent.VK_E -> spawnCreatureAtCursor();
+                case KeyEvent.VK_TAB -> editBackground = !editBackground;
                 case KeyEvent.VK_ESCAPE -> System.exit(0);
                 default -> {
                     if (p.keyCode() >= KeyEvent.VK_1 && p.keyCode() <= KeyEvent.VK_9) {
@@ -140,6 +155,8 @@ final class Game extends Canvas implements Runnable {
             }
         }
         for (Input.Click c; (c = input.pollClick()) != null; ) handleClick(c);
+        paintHeld(MouseEvent.BUTTON1);
+        paintHeld(MouseEvent.BUTTON3);
 
         player.moveX = (input.isDown(KeyEvent.VK_D) ? 1 : 0) - (input.isDown(KeyEvent.VK_A) ? 1 : 0);
         player.moveY = 0;
@@ -158,30 +175,78 @@ final class Game extends Canvas implements Runnable {
             inventory.select(inventory.selected() + Integer.signum(c.wheel()));
             return;
         }
-        int slot = hotbarSlotAt(c.x(), c.y());
-        if (slot >= 0) {                              // clicks on the hotbar select a slot
-            inventory.select(slot);
+        int b = c.button();
+        if (b != MouseEvent.BUTTON1 && b != MouseEvent.BUTTON3) return;
+        if (hotbarContains(c.x(), c.y())) {
+            int slot = hotbarSlotAt(c.x(), c.y());
+            if (slot >= 0) inventory.select(slot);     // clicks on the hotbar select a slot
+            paintSuppressed[b] = true;                 // ...and never start painting
             return;
         }
-        if (hotbarContains(c.x(), c.y())) return;
-
+        // Edit immediately on press, so even a click shorter than one tick registers.
         int tx = cursorTileX(c.x());
         int ty = cursorTileY(c.y());
-
-        if (c.button() == java.awt.event.MouseEvent.BUTTON1) {
-            // Left click places whatever the selected slot holds - an empty slot is air,
-            // so placing it into a block destroys that block. Blocks can go anywhere,
-            // including mid-air, as long as no entity is in the way.
-            placeBlock(tx, ty, inventory.selectedBlock());
-        } else if (c.button() == java.awt.event.MouseEvent.BUTTON3) {
-            placeBlock(tx, ty, Chunk.AIR);               // shortcut: always removes
-        }
+        applyEdit(b, tx, ty);
+        painting[b] = true;
+        lastPaintX[b] = tx;
+        lastPaintY[b] = ty;
     }
 
-    private void placeBlock(int tx, int ty, byte block) {
-        if (world.getBlock(tx, ty) == block) return;
-        if (block != Chunk.AIR && entities.anyOverlapsTile(tx, ty)) return;
-        world.setBlock(tx, ty, block);
+    /**
+     * While a button is held, keeps editing every tile the cursor passes over. Tiles between
+     * the previous and current cursor tile are filled in too, so fast drags leave no gaps.
+     */
+    private void paintHeld(int b) {
+        if (!input.isButtonDown(b)) {
+            painting[b] = false;
+            paintSuppressed[b] = false;
+            return;
+        }
+        int mx = input.mouseX();
+        int my = input.mouseY();
+        if (paintSuppressed[b] || mx < 0 || my < 0 || hotbarContains(mx, my)) return;
+        int tx = cursorTileX(mx);
+        int ty = cursorTileY(my);
+        if (!painting[b]) {
+            applyEdit(b, tx, ty);
+        } else if (tx != lastPaintX[b] || ty != lastPaintY[b]) {
+            // Bresenham line from the last painted tile to the current one.
+            int x = lastPaintX[b];
+            int y = lastPaintY[b];
+            int dx = Math.abs(tx - x);
+            int dy = -Math.abs(ty - y);
+            int sx = x < tx ? 1 : -1;
+            int sy = y < ty ? 1 : -1;
+            int err = dx + dy;
+            while (true) {
+                applyEdit(b, x, y);
+                if (x == tx && y == ty) break;
+                int e2 = 2 * err;
+                if (e2 >= dy) { err += dy; x += sx; }
+                if (e2 <= dx) { err += dx; y += sy; }
+            }
+        } else {
+            applyEdit(b, tx, ty);   // re-apply: e.g. an entity moved out of the way
+        }
+        painting[b] = true;
+        lastPaintX[b] = tx;
+        lastPaintY[b] = ty;
+    }
+
+    /**
+     * Left button places whatever the selected slot holds (an empty slot is air, so it
+     * removes); the right button always removes. Blocks can go anywhere, including mid-air.
+     */
+    private void applyEdit(int button, int tx, int ty) {
+        byte block = button == MouseEvent.BUTTON1 ? inventory.selectedBlock() : Block.AIR;
+        if (editBackground) {
+            if (!Block.allowedInBackground(block) || world.getBackground(tx, ty) == block) return;
+            world.setBackground(tx, ty, block);
+        } else {
+            if (world.getBlock(tx, ty) == block) return;
+            if (block != Block.AIR && entities.anyOverlapsTile(tx, ty)) return;
+            world.setBlock(tx, ty, block);
+        }
     }
 
     private void spawnCreatureAtCursor() {
@@ -302,37 +367,25 @@ final class Game extends Canvas implements Runnable {
         int tx1 = (int) Math.floorDiv(camPxX + w, TILE);
         int ty1 = (int) Math.floorDiv(camPxY + h, TILE);
 
-        // Background layer: light blue wherever generated terrain sits behind foreground air.
-        g.setColor(BACKGROUND_COLOR);
-        for (int ty = ty0; ty <= ty1; ty++) {
-            int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
-            int tx = tx0;
-            while (tx <= tx1) {
-                if (!showsBackground(tx, ty)) {
-                    tx++;
-                    continue;
+        if (editBackground) {
+            // Background mode: foreground = dark gray, background (where visible) = solid dark blue.
+            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h, this::backgroundModeCategory,
+                    new Color[] {null, BG_MODE_BACKGROUND, BG_MODE_FOREGROUND});
+        } else {
+            // Foreground mode: light-blue background shows wherever foreground isn't opaque.
+            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
+                    (x, y) -> showsBackground(x, y) ? 1 : 0, new Color[] {null, BACKGROUND_COLOR});
+            // Ground blocks merged into runs, then the special blocks one tile at a time.
+            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
+                    (x, y) -> world.getBlock(x, y) == Block.GROUND ? 1 : 0, new Color[] {null, Color.BLACK});
+            for (int ty = ty0; ty <= ty1; ty++) {
+                int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
+                for (int tx = tx0; tx <= tx1; tx++) {
+                    byte b = world.getBlock(tx, ty);
+                    if (b != Block.AIR && b != Block.GROUND) {
+                        Block.draw(g, b, (int) ((long) tx * TILE - camPxX), sy, TILE);
+                    }
                 }
-                int start = tx;
-                while (tx <= tx1 && showsBackground(tx, ty)) tx++;
-                int sx = (int) ((long) start * TILE - camPxX);
-                g.fillRect(sx, sy, (tx - start) * TILE, TILE);
-            }
-        }
-
-        // Foreground blocks: merge horizontal runs into single rectangles.
-        g.setColor(Color.BLACK);
-        for (int ty = ty0; ty <= ty1; ty++) {
-            int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
-            int tx = tx0;
-            while (tx <= tx1) {
-                if (!world.isSolid(tx, ty)) {
-                    tx++;
-                    continue;
-                }
-                int start = tx;
-                while (tx <= tx1 && world.isSolid(tx, ty)) tx++;
-                int sx = (int) ((long) start * TILE - camPxX);
-                g.fillRect(sx, sy, (tx - start) * TILE, TILE);
             }
         }
 
@@ -367,7 +420,8 @@ final class Game extends Canvas implements Runnable {
         if (mxp >= 0 && myp >= 0 && !hotbarContains(mxp, myp)) {
             int tx = (int) Math.floorDiv(camPxX + mxp, TILE);
             int ty = (int) Math.floorDiv(camPxY + (h - myp), TILE);
-            if (world.isSolid(tx, ty)) {
+            byte under = editBackground ? world.getBackground(tx, ty) : world.getBlock(tx, ty);
+            if (under != Block.AIR) {
                 int sx = (int) ((long) tx * TILE - camPxX);
                 int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
                 g.setColor(SELECT_COLOR);
@@ -378,11 +432,38 @@ final class Game extends Canvas implements Runnable {
         }
 
         drawHotbar(g);
+        drawEditLabel(g);
         drawHud(g, camPxX, camPxY, h);
     }
 
     private boolean showsBackground(int tx, int ty) {
-        return world.getBackground(tx, ty) != Chunk.AIR && !world.isSolid(tx, ty);
+        return world.getBackground(tx, ty) != Block.AIR && !Block.isOpaque(world.getBlock(tx, ty));
+    }
+
+    private int backgroundModeCategory(int tx, int ty) {
+        if (world.getBlock(tx, ty) != Block.AIR) return 2;
+        return world.getBackground(tx, ty) != Block.AIR ? 1 : 0;
+    }
+
+    /**
+     * Fills the visible tiles by category, merging horizontal runs of the same category into
+     * one rectangle each. Category 0 is not drawn.
+     */
+    private void drawRuns(Graphics2D g, int tx0, int ty0, int tx1, int ty1, long camPxX, long camPxY, int h,
+                          java.util.function.IntBinaryOperator category, Color[] palette) {
+        for (int ty = ty0; ty <= ty1; ty++) {
+            int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
+            int tx = tx0;
+            while (tx <= tx1) {
+                int cat = category.applyAsInt(tx, ty);
+                int start = tx;
+                while (tx <= tx1 && category.applyAsInt(tx, ty) == cat) tx++;
+                if (cat != 0) {
+                    g.setColor(palette[cat]);
+                    g.fillRect((int) ((long) start * TILE - camPxX), sy, (tx - start) * TILE, TILE);
+                }
+            }
+        }
     }
 
     private void drawHotbar(Graphics2D g) {
@@ -401,10 +482,9 @@ final class Game extends Canvas implements Runnable {
             g.fillRect(sx, sy, SLOT_SIZE, SLOT_SIZE);
 
             byte block = inventory.get(i);
-            if (block != Chunk.AIR) {
-                int inset = 11;
-                g.setColor(Color.BLACK);
-                g.fillRect(sx + inset, sy + inset, SLOT_SIZE - 2 * inset, SLOT_SIZE - 2 * inset);
+            if (block != Block.AIR) {
+                int inset = 10;
+                Block.draw(g, block, sx + inset, sy + inset, SLOT_SIZE - 2 * inset);
             }
 
             g.setColor(SLOT_BORDER);
@@ -420,13 +500,29 @@ final class Game extends Canvas implements Runnable {
         }
     }
 
+    /** Small label above the hotbar: the selected block and the layer being edited. */
+    private void drawEditLabel(Graphics2D g) {
+        byte sel = inventory.selectedBlock();
+        String text = (editBackground ? "Background" : "Foreground") + " \u00b7 " + Block.name(sel)
+                + (editBackground && !Block.allowedInBackground(sel) ? " (foreground only)" : "");
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
+        int tw = g.getFontMetrics().stringWidth(text);
+        int lx = (getWidth() - tw) / 2 - 8;
+        int ly = barY() - 26;
+        g.setColor(editBackground ? BG_MODE_BACKGROUND : BAR_COLOR);
+        g.fillRect(lx, ly, tw + 16, 20);
+        g.setColor(Color.WHITE);
+        g.drawString(text, lx + 8, ly + 14);
+    }
+
     private void drawHud(Graphics2D g, long camPxX, long camPxY, int h) {
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
         int y = 18;
         if (time < 10 && !showDebug) {
             g.setColor(HUD_COLOR);
-            g.drawString("A/D move  Shift sprint  W/Space jump  Space x2 fly  LMB place slot (empty = air)  RMB remove  1-9 slot  E creature  F3", 10, y);
+            g.drawString("A/D move  Shift sprint  W/Space jump  Space x2 fly  LMB place (hold)  RMB remove  1-9 slot  Tab layer  E creature  F3", 10, y);
         }
         if (!showDebug) return;
 

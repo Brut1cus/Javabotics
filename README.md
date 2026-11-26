@@ -25,8 +25,9 @@ java -jar dist/Javabotics.jar 42       # fixed seed (numbers or any text)
 | W or Space | Jump |
 | Space, Space (double-tap within 300 ms) | Toggle flying |
 | W or Space / S | Fly up / down (while flying) |
-| Left click | Place the selected slot's contents at the cursor: a block goes anywhere (even mid-air); an empty slot is air, so it removes the block |
-| Right click | Shortcut: always removes the block under the cursor |
+| Left click (hold to paint) | Place the selected slot's contents at the cursor: a block goes anywhere (even mid-air); an empty slot is air, so it removes the block |
+| Right click (hold to paint) | Shortcut: always removes the block under the cursor |
+| Tab | Switch editing between the foreground and background layers |
 | E | Spawn a creature at the cursor |
 | 1-9 / mouse wheel / click a slot | Select hotbar slot |
 | F3 | Debug overlay (position, chunk, biome, collision window) |
@@ -51,10 +52,17 @@ Touching the ground while flying ends flight, as in Minecraft.
     underground.
 - **Layers** (`Chunk`): each chunk has an editable *foreground* (the black blocks everything
   collides with) and a visual-only *background*, a copy of the terrain as generated, drawn
-  very light blue wherever the foreground has been dug out.
+  light blue wherever the foreground has been dug out. Tab switches which layer the mouse
+  edits; in background mode foreground blocks are drawn dark gray and background blocks solid
+  dark blue. Only Ground (or air) can be placed in the background.
+- **Blocks** (`Block`): Ground (terrain), plus two walker parts placed from the hotbar (not
+  generated). *Joint* will be a powered connection between two sides of a walker; *Scaffold*
+  is an open frame that will never be included in a walker, used to separate blocks. All
+  non-air blocks are solid for now.
 - **Editing** (`Inventory`, `World.setBlock`): the block under the cursor gets a red outline
-  if it isn't air. The 9-slot hotbar starts with a ground block in slot 1 (unlimited) and
-  slots 2-9 empty (= air). Blocks can't be placed into an entity. Edited chunks are marked
+  if it isn't air. The 9-slot hotbar starts with Ground, Joint and Scaffold in slots 1-3
+  (unlimited) and slots 4-9 empty (= air). Holding a mouse button keeps editing every tile the
+  cursor crosses. Blocks can't be placed into an entity. Edited chunks are marked
   modified and never unloaded, so changes persist.
 - **Entities** (`Entity`, `EntityList`, `Creature`, `Vision`): every dynamic body, the player included,
   shares the same world-collision code. After each step, overlapping entities are pushed apart

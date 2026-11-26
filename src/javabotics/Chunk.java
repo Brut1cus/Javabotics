@@ -13,8 +13,7 @@ final class Chunk {
     static final int SHIFT = 4;
     static final int MASK = SIZE - 1;
 
-    static final byte AIR = 0;
-    static final byte SOLID = 1;
+    static final byte AIR = Block.AIR;
 
     final int cx;
     final int cy;

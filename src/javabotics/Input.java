@@ -20,6 +20,8 @@ final class Input extends KeyAdapter {
     private final ConcurrentLinkedQueue<Press> presses = new ConcurrentLinkedQueue<>();
 
     private final ConcurrentLinkedQueue<Click> clicks = new ConcurrentLinkedQueue<>();
+    private volatile boolean leftDown;
+    private volatile boolean rightDown;
     private volatile int mouseX = -1;
     private volatile int mouseY = -1;
 
@@ -34,7 +36,15 @@ final class Input extends KeyAdapter {
             e.getComponent().requestFocusInWindow();
             mouseX = e.getX();
             mouseY = e.getY();
+            if (e.getButton() == MouseEvent.BUTTON1) leftDown = true;
+            if (e.getButton() == MouseEvent.BUTTON3) rightDown = true;
             clicks.add(new Click(e.getButton(), e.getX(), e.getY(), 0));
+        }
+
+        @Override
+        public void mouseReleased(MouseEvent e) {
+            if (e.getButton() == MouseEvent.BUTTON1) leftDown = false;
+            if (e.getButton() == MouseEvent.BUTTON3) rightDown = false;
         }
 
         @Override
@@ -65,6 +75,8 @@ final class Input extends KeyAdapter {
         public void focusLost(FocusEvent e) {
             synchronized (down) {
                 java.util.Arrays.fill(down, false);
+                leftDown = false;
+                rightDown = false;
             }
         }
     };
@@ -104,6 +116,11 @@ final class Input extends KeyAdapter {
 
     Click pollClick() {
         return clicks.poll();
+    }
+
+    /** Whether a mouse button ({@link MouseEvent#BUTTON1} or {@link MouseEvent#BUTTON3}) is held. */
+    boolean isButtonDown(int button) {
+        return button == MouseEvent.BUTTON1 ? leftDown : button == MouseEvent.BUTTON3 && rightDown;
     }
 
     /** Cursor position in canvas pixels, or -1 when the cursor is outside the canvas. */

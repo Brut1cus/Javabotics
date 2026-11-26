@@ -46,6 +46,12 @@ final class World {
         c.modified = true;
     }
 
+    void setBackground(int x, int y, byte block) {
+        Chunk c = chunk(x >> Chunk.SHIFT, y >> Chunk.SHIFT);
+        c.setBackground(x & Chunk.MASK, y & Chunk.MASK, block);
+        c.modified = true;
+    }
+
     boolean isSolid(int x, int y) {
         return getBlock(x, y) != Chunk.AIR;
     }
