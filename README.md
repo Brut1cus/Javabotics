@@ -72,7 +72,7 @@ Touching the ground while flying ends flight, as in Minecraft.
   shares the same world-collision code. After each step, overlapping entities are pushed apart
   on the axis of least overlap: sideways split by mass, or lifted on top, so you can stand on
   creatures. Creatures (orange 1x1) wander and hop up 1-block steps. They see in a 140° cone
-  facing forward, out to 18 blocks, and foreground blocks block their sight (grid-traversal
+  facing forward, out to 18 blocks, and front-layer blocks block their sight (grid-traversal
   raycast). When one sees the player its eye turns red and it chases them, then keeps going to
   where it last saw them for 3 s. Up to 6 spawn naturally 30-50 blocks from the player and
   despawn beyond ~96 blocks. With F3 on, red lines show which creatures see you.
