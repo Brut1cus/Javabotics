@@ -59,9 +59,8 @@ Touching the ground while flying ends flight, as in Minecraft.
 - **Blocks** (`Block`): Ground (terrain), plus three walker parts placed from the hotbar (never
   generated): *Joint* (will be a powered connection between two sides), *Scaffold* (an open
   frame that will never be part of a walker; it keeps blocks apart) and *Hull Core* (will open
-  the walker-assembly GUI). These three are **linked**: placing one fills that cell in both
-  layers, and removing or replacing it from either layer clears both. Walkers can then have two
-  parallel sets of legs, one per layer, joined through shared joints and the core. All
+  the walker-assembly GUI). Like Ground, each part is placed only in the current front layer, and parts are tinted
+  with their layer's colour so you can tell which layer they're in. All
   non-air blocks in the front layer are solid.
 - **Editing** (`Inventory`, `World.setBlock`): the block under the cursor gets a red outline
   if it isn't air. The 9-slot hotbar starts with Ground, Joint, Scaffold and Hull Core in

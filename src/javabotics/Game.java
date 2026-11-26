@@ -242,17 +242,6 @@ final class Game extends Canvas implements Runnable {
         // The front layer is solid, so nothing may be placed into an entity.
         if (block != Block.AIR && entities.anyOverlapsTile(tx, ty)) return;
 
-        if (Block.isLinked(block)) {
-            // Linked blocks occupy the cell in both layers.
-            world.setBlock(World.BLACK, tx, ty, block);
-            world.setBlock(World.BLUE, tx, ty, block);
-            return;
-        }
-        if (Block.isLinked(current)) {
-            // Removing or replacing a linked block clears it from both layers.
-            world.setBlock(World.BLACK, tx, ty, Block.AIR);
-            world.setBlock(World.BLUE, tx, ty, Block.AIR);
-        }
         world.setBlock(front, tx, ty, block);
     }
 
@@ -395,20 +384,8 @@ final class Game extends Canvas implements Runnable {
         int ty1 = (int) Math.floorDiv(camPxY + h, TILE);
 
         // Back layer first, front layer on top. Each layer keeps its own colour.
-        int back = world.backLayer();
-        int front = world.frontLayer();
-        drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
-                (x, y) -> world.getBlock(back, x, y) == Block.GROUND ? 1 : 0, new Color[] {null, LAYER_COLOR[back]});
-        drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
-                (x, y) -> world.getBlock(front, x, y) == Block.GROUND ? 1 : 0, new Color[] {null, LAYER_COLOR[front]});
-        // Linked parts (joint, scaffold, hull core) live in both layers: drawn on top in either mode.
-        for (int ty = ty0; ty <= ty1; ty++) {
-            int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
-            for (int tx = tx0; tx <= tx1; tx++) {
-                byte b = world.getBlock(tx, ty);
-                if (Block.isLinked(b)) Block.draw(g, b, (int) ((long) tx * TILE - camPxX), sy, TILE, null);
-            }
-        }
+        drawLayer(g, world.backLayer(), tx0, ty0, tx1, ty1, camPxX, camPxY, h);
+        drawLayer(g, world.frontLayer(), tx0, ty0, tx1, ty1, camPxX, camPxY, h);
 
         // Entities.
         for (Entity e : entities) {
@@ -455,6 +432,19 @@ final class Game extends Canvas implements Runnable {
         drawHotbar(g);
         drawEditLabel(g);
         drawHud(g, camPxX, camPxY, h);
+    }
+
+    /** One layer: ground merged into runs, then parts one tile at a time. */
+    private void drawLayer(Graphics2D g, int layer, int tx0, int ty0, int tx1, int ty1, long camPxX, long camPxY, int h) {
+        drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
+                (x, y) -> world.getBlock(layer, x, y) == Block.GROUND ? 1 : 0, new Color[] {null, LAYER_COLOR[layer]});
+        for (int ty = ty0; ty <= ty1; ty++) {
+            int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
+            for (int tx = tx0; tx <= tx1; tx++) {
+                byte b = world.getBlock(layer, tx, ty);
+                if (Block.isPart(b)) Block.draw(g, b, (int) ((long) tx * TILE - camPxX), sy, TILE, LAYER_COLOR[layer]);
+            }
+        }
     }
 
     /**
@@ -515,8 +505,7 @@ final class Game extends Canvas implements Runnable {
     /** Small label above the hotbar: the selected block and the layer being edited. */
     private void drawEditLabel(Graphics2D g) {
         byte sel = inventory.selectedBlock();
-        String text = (world.frontLayer() == World.BLACK ? "Black layer" : "Blue layer") + " \u00b7 " + Block.name(sel)
-                + (Block.isLinked(sel) ? " (both layers)" : "");
+        String text = (world.frontLayer() == World.BLACK ? "Black layer" : "Blue layer") + " \u00b7 " + Block.name(sel);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
         int tw = g.getFontMetrics().stringWidth(text);

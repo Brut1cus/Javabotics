@@ -17,9 +17,8 @@ import java.awt.Stroke;
  *   <li><b>Hull Core</b>: the heart of a walker; will open the assembly GUI.</li>
  * </ul>
  *
- * <p>Joint, Scaffold and Hull Core are <em>linked</em>: one block occupies the same cell in both
- * the foreground and background layers. That lets a walker carry two parallel sets of legs,
- * one per layer, connected through shared joints and the core.
+ * <p>Every block belongs to exactly one layer (black or blue) and is tinted with that layer's
+ * colour, so parts in the back layer can be told apart from parts in the front layer.
  */
 final class Block {
     private Block() {}
@@ -33,8 +32,6 @@ final class Block {
     private static final Color JOINT_BODY = new Color(72, 72, 72);
     private static final Color JOINT_RING = new Color(215, 215, 215);
     private static final Color JOINT_PLATE = new Color(150, 150, 150);
-    private static final Color SCAFFOLD_COLOR = new Color(115, 115, 115);
-    private static final Color CORE_FRAME = new Color(45, 45, 45);
     private static final Color CORE_PLATE = new Color(120, 120, 120);
     private static final Color CORE_LIGHT = new Color(240, 175, 40);
 
@@ -49,24 +46,28 @@ final class Block {
         };
     }
 
-    /** Linked blocks always occupy both layers at once. */
-    static boolean isLinked(byte b) {
+    /** Walker parts: everything placeable except plain ground. */
+    static boolean isPart(byte b) {
         return b == JOINT || b == SCAFFOLD || b == HULL_CORE;
     }
 
     /**
      * Draws one block of type {@code b} into the square at (x, y) with side {@code s} pixels.
-     * Ground takes the colour of its layer ({@code groundColor}); parts look the same in both.
+     * {@code layer} is the colour of the block's layer: ground is filled with it, and parts use it
+     * for their frame so you can see which layer they belong to.
      */
-    static void draw(Graphics2D g, byte b, int x, int y, int s, Color groundColor) {
+    static void draw(Graphics2D g, byte b, int x, int y, int s, Color layer) {
         switch (b) {
             case GROUND -> {
-                g.setColor(groundColor != null ? groundColor : Color.BLACK);
+                g.setColor(layer);
                 g.fillRect(x, y, s, s);
             }
             case JOINT -> {
-                g.setColor(JOINT_BODY);
+                g.setColor(layer);
                 g.fillRect(x, y, s, s);
+                int f = Math.max(2, s / 12);
+                g.setColor(JOINT_BODY);
+                g.fillRect(x + f, y + f, s - 2 * f, s - 2 * f);
                 // Mounting plates on the two sides the joint connects.
                 int pw = Math.max(2, s / 8);
                 g.setColor(JOINT_PLATE);
@@ -87,7 +88,7 @@ final class Block {
                 // Open frame with cross-bracing: the background shows through.
                 Stroke old = g.getStroke();
                 g.setStroke(new BasicStroke(Math.max(2, s / 12f)));
-                g.setColor(SCAFFOLD_COLOR);
+                g.setColor(mix(layer, Color.WHITE, 0.35));
                 int i = 1;
                 g.drawRect(x + i, y + i, s - 2 * i - 1, s - 2 * i - 1);
                 g.drawLine(x + i, y + i, x + s - i - 1, y + s - i - 1);
@@ -95,18 +96,24 @@ final class Block {
                 g.setStroke(old);
             }
             case HULL_CORE -> {
-                g.setColor(CORE_FRAME);
+                g.setColor(layer);
                 g.fillRect(x, y, s, s);
                 int m = Math.max(2, s / 6);
                 g.setColor(CORE_PLATE);
                 g.fillRect(x + m, y + m, s - 2 * m, s - 2 * m);
                 int c = Math.max(3, s * 3 / 8);
-                g.setColor(CORE_FRAME);
+                g.setColor(layer);
                 g.fillRect(x + (s - c) / 2 - 1, y + (s - c) / 2 - 1, c + 2, c + 2);
                 g.setColor(CORE_LIGHT);
                 g.fillRect(x + (s - c) / 2, y + (s - c) / 2, c, c);
             }
             default -> { }
         }
+    }
+
+    private static Color mix(Color a, Color b, double t) {
+        return new Color((int) Math.round(a.getRed() + (b.getRed() - a.getRed()) * t),
+                (int) Math.round(a.getGreen() + (b.getGreen() - a.getGreen()) * t),
+                (int) Math.round(a.getBlue() + (b.getBlue() - a.getBlue()) * t));
     }
 }
