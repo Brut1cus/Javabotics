@@ -29,6 +29,17 @@ final class World {
         return c.get(x & Chunk.MASK, y & Chunk.MASK);
     }
 
+    byte getBackground(int x, int y) {
+        int cx = x >> Chunk.SHIFT;
+        int cy = y >> Chunk.SHIFT;
+        Chunk c = lastChunk;
+        if (c == null || c.cx != cx || c.cy != cy) {
+            c = chunk(cx, cy);
+            lastChunk = c;
+        }
+        return c.getBackground(x & Chunk.MASK, y & Chunk.MASK);
+    }
+
     void setBlock(int x, int y, byte block) {
         Chunk c = chunk(x >> Chunk.SHIFT, y >> Chunk.SHIFT);
         c.set(x & Chunk.MASK, y & Chunk.MASK, block);

@@ -18,6 +18,8 @@ final class Game extends Canvas implements Runnable {
 
     private static final Color PLAYER_COLOR = new Color(128, 128, 128);
     private static final Color HUD_COLOR = new Color(90, 90, 90);
+    private static final Color BACKGROUND_COLOR = new Color(222, 238, 255);
+    private static final Color CREATURE_COLOR = new Color(205, 110, 40);
     private static final Color SELECT_COLOR = new Color(230, 30, 30);
     private static final Color BAR_COLOR = new Color(150, 150, 150);
     private static final Color SLOT_COLOR = new Color(195, 195, 195);
@@ -32,6 +34,7 @@ final class Game extends Canvas implements Runnable {
     private final Player player;
     private final Input input = new Input();
     private final Inventory inventory = new Inventory();
+    private final EntityList entities;
 
     // Camera = world position of the bottom-left corner of the view, in blocks.
     private double camX;
@@ -50,6 +53,8 @@ final class Game extends Canvas implements Runnable {
         int spawnX = 0;
         int surface = world.surfaceY(spawnX, 256);
         player = new Player(spawnX, surface + 1);
+        entities = new EntityList(seed);
+        entities.add(player);
 
         setBackground(Color.WHITE);
         setIgnoreRepaint(true);
@@ -125,6 +130,7 @@ final class Game extends Canvas implements Runnable {
                 case KeyEvent.VK_SPACE -> player.onSpacePressed(p.when());
                 case KeyEvent.VK_W -> player.onJumpPressed();
                 case KeyEvent.VK_F3 -> showDebug = !showDebug;
+                case KeyEvent.VK_E -> spawnCreatureAtCursor();
                 case KeyEvent.VK_ESCAPE -> System.exit(0);
                 default -> {
                     if (p.keyCode() >= KeyEvent.VK_1 && p.keyCode() <= KeyEvent.VK_9) {
@@ -135,14 +141,15 @@ final class Game extends Canvas implements Runnable {
         }
         for (Input.Click c; (c = input.pollClick()) != null; ) handleClick(c);
 
-        int mx = (input.isDown(KeyEvent.VK_D) ? 1 : 0) - (input.isDown(KeyEvent.VK_A) ? 1 : 0);
-        int my = 0;
+        player.moveX = (input.isDown(KeyEvent.VK_D) ? 1 : 0) - (input.isDown(KeyEvent.VK_A) ? 1 : 0);
+        player.moveY = 0;
         if (player.flying) {
             boolean up = input.isDown(KeyEvent.VK_W) || input.isDown(KeyEvent.VK_SPACE);
             boolean down = input.isDown(KeyEvent.VK_S);
-            my = (up ? 1 : 0) - (down ? 1 : 0);
+            player.moveY = (up ? 1 : 0) - (down ? 1 : 0);
         }
-        player.update(world, DT, mx, my, input.isDown(KeyEvent.VK_SHIFT));
+        player.sprint = input.isDown(KeyEvent.VK_SHIFT);
+        entities.update(world, DT);
         updateCamera();
     }
 
@@ -158,24 +165,38 @@ final class Game extends Canvas implements Runnable {
         }
         if (hotbarContains(c.x(), c.y())) return;
 
-        long camPxX = Math.round(camX * TILE);
-        long camPxY = Math.round(camY * TILE);
-        int tx = (int) Math.floorDiv(camPxX + c.x(), TILE);
-        int ty = (int) Math.floorDiv(camPxY + (getHeight() - c.y()), TILE);
+        int tx = cursorTileX(c.x());
+        int ty = cursorTileY(c.y());
 
         if (c.button() == java.awt.event.MouseEvent.BUTTON1) {
-            if (world.isSolid(tx, ty)) world.setBlock(tx, ty, Chunk.AIR);
+            // Left click places whatever the selected slot holds - an empty slot is air,
+            // so placing it into a block destroys that block. Blocks can go anywhere,
+            // including mid-air, as long as no entity is in the way.
+            placeBlock(tx, ty, inventory.selectedBlock());
         } else if (c.button() == java.awt.event.MouseEvent.BUTTON3) {
-            byte block = inventory.selectedBlock();
-            if (block != Chunk.AIR && !world.isSolid(tx, ty) && !overlapsPlayer(tx, ty)) {
-                world.setBlock(tx, ty, block);
-            }
+            placeBlock(tx, ty, Chunk.AIR);               // shortcut: always removes
         }
     }
 
-    private boolean overlapsPlayer(int tx, int ty) {
-        return tx < player.x + Player.WIDTH && tx + 1 > player.x
-                && ty < player.y + Player.HEIGHT && ty + 1 > player.y;
+    private void placeBlock(int tx, int ty, byte block) {
+        if (world.getBlock(tx, ty) == block) return;
+        if (block != Chunk.AIR && entities.anyOverlapsTile(tx, ty)) return;
+        world.setBlock(tx, ty, block);
+    }
+
+    private void spawnCreatureAtCursor() {
+        int mx = input.mouseX();
+        int my = input.mouseY();
+        if (mx < 0 || my < 0 || hotbarContains(mx, my)) return;
+        entities.spawnCreature(world, cursorTileX(mx), cursorTileY(my));
+    }
+
+    private int cursorTileX(int px) {
+        return (int) Math.floorDiv(Math.round(camX * TILE) + px, TILE);
+    }
+
+    private int cursorTileY(int py) {
+        return (int) Math.floorDiv(Math.round(camY * TILE) + (getHeight() - py), TILE);
     }
 
     // ------------------------------------------------------------------ hotbar layout
@@ -281,7 +302,24 @@ final class Game extends Canvas implements Runnable {
         int tx1 = (int) Math.floorDiv(camPxX + w, TILE);
         int ty1 = (int) Math.floorDiv(camPxY + h, TILE);
 
-        // Blocks: merge horizontal runs into single rectangles.
+        // Background layer: light blue wherever generated terrain sits behind foreground air.
+        g.setColor(BACKGROUND_COLOR);
+        for (int ty = ty0; ty <= ty1; ty++) {
+            int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
+            int tx = tx0;
+            while (tx <= tx1) {
+                if (!showsBackground(tx, ty)) {
+                    tx++;
+                    continue;
+                }
+                int start = tx;
+                while (tx <= tx1 && showsBackground(tx, ty)) tx++;
+                int sx = (int) ((long) start * TILE - camPxX);
+                g.fillRect(sx, sy, (tx - start) * TILE, TILE);
+            }
+        }
+
+        // Foreground blocks: merge horizontal runs into single rectangles.
         g.setColor(Color.BLACK);
         for (int ty = ty0; ty <= ty1; ty++) {
             int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
@@ -298,13 +336,30 @@ final class Game extends Canvas implements Runnable {
             }
         }
 
-        // Player.
-        double px = player.prevX + (player.x - player.prevX) * alpha;
-        double py = player.prevY + (player.y - player.prevY) * alpha;
-        int psx = (int) (Math.round(px * TILE) - camPxX);
-        int psy = (int) (h - (Math.round((py + Player.HEIGHT) * TILE) - camPxY));
-        g.setColor(PLAYER_COLOR);
-        g.fillRect(psx, psy, (int) (Player.WIDTH * TILE), (int) (Player.HEIGHT * TILE));
+        // Entities.
+        for (Entity e : entities) {
+            double ex = e.prevX + (e.x - e.prevX) * alpha;
+            double ey = e.prevY + (e.y - e.prevY) * alpha;
+            int esx = (int) (Math.round(ex * TILE) - camPxX);
+            int esy = (int) (h - (Math.round((ey + e.height) * TILE) - camPxY));
+            int ew = (int) Math.round(e.width * TILE);
+            int eh = (int) Math.round(e.height * TILE);
+            if (e instanceof Creature c) {
+                g.setColor(CREATURE_COLOR);
+                g.fillRect(esx, esy, ew, eh);
+                // Eye on the facing side; it turns red while the creature can see the player.
+                int eye = 7;
+                int eyeX = c.facing > 0 ? esx + ew - eye - 3 : esx + 3;
+                int eyeY = esy + 5;
+                g.setColor(Color.WHITE);
+                g.fillRect(eyeX, eyeY, eye, eye);
+                g.setColor(c.seesPlayer ? SELECT_COLOR : Color.BLACK);
+                g.fillRect(c.facing > 0 ? eyeX + 3 : eyeX + 1, eyeY + 2, 3, 3);
+            } else {
+                g.setColor(PLAYER_COLOR);
+                g.fillRect(esx, esy, ew, eh);
+            }
+        }
 
         // Block under the cursor: red outline if it is not air.
         int mxp = input.mouseX();
@@ -324,6 +379,10 @@ final class Game extends Canvas implements Runnable {
 
         drawHotbar(g);
         drawHud(g, camPxX, camPxY, h);
+    }
+
+    private boolean showsBackground(int tx, int ty) {
+        return world.getBackground(tx, ty) != Chunk.AIR && !world.isSolid(tx, ty);
     }
 
     private void drawHotbar(Graphics2D g) {
@@ -367,9 +426,18 @@ final class Game extends Canvas implements Runnable {
         int y = 18;
         if (time < 10 && !showDebug) {
             g.setColor(HUD_COLOR);
-            g.drawString("A/D move  Shift sprint  W/Space jump  Space x2 fly  LMB mine  RMB place  1-9 slot  F3 debug", 10, y);
+            g.drawString("A/D move  Shift sprint  W/Space jump  Space x2 fly  LMB place slot (empty = air)  RMB remove  1-9 slot  E creature  F3", 10, y);
         }
         if (!showDebug) return;
+
+        // Vision lines from creatures that currently see the player.
+        g.setColor(SELECT_COLOR);
+        for (Entity e : entities) {
+            if (e instanceof Creature c && c.seesPlayer) {
+                g.drawLine((int) Math.round(c.eyeX * TILE - camPxX), (int) Math.round(h - (c.eyeY * TILE - camPxY)),
+                        (int) Math.round(player.centerX() * TILE - camPxX), (int) Math.round(h - (player.centerY() * TILE - camPxY)));
+            }
+        }
 
         // Outline the dynamic collision window the player used this step.
         CollisionWindow cw = player.window();
@@ -388,6 +456,7 @@ final class Game extends Canvas implements Runnable {
                         + " (region " + world.generator().regionOfChunk(Math.floorDiv(bx, Chunk.SIZE)) + ")",
                 "Mode: " + (player.flying ? "flying" : (player.onGround ? "on ground" : "airborne")),
                 "Collision window: " + cw.width() + "x" + cw.height() + " tiles",
+                "Entities: " + entities.size(),
                 "Loaded chunks: " + world.loadedChunks(),
                 "Seed: " + world.generator().seed(),
         };

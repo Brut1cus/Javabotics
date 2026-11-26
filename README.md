@@ -25,8 +25,9 @@ java -jar dist/Javabotics.jar 42       # fixed seed (numbers or any text)
 | W or Space | Jump |
 | Space, Space (double-tap within 300 ms) | Toggle flying |
 | W or Space / S | Fly up / down (while flying) |
-| Left click | Mine (destroy) the block under the cursor |
-| Right click | Place the selected hotbar block in the empty cell under the cursor |
+| Left click | Place the selected slot's contents at the cursor: a block goes anywhere (even mid-air); an empty slot is air, so it removes the block |
+| Right click | Shortcut: always removes the block under the cursor |
+| E | Spawn a creature at the cursor |
 | 1-9 / mouse wheel / click a slot | Select hotbar slot |
 | F3 | Debug overlay (position, chunk, biome, collision window) |
 | Esc | Quit |
@@ -48,12 +49,24 @@ Touching the ground while flying ends flight, as in Minecraft.
   - *Terrain layer*: a 2D density field made of a noise height map plus 2D noise scaled by
     the biome's roughness (overhangs, arches, floating islands). Worm caves are carved
     underground.
+- **Layers** (`Chunk`): each chunk has an editable *foreground* (the black blocks everything
+  collides with) and a visual-only *background*, a copy of the terrain as generated, drawn
+  very light blue wherever the foreground has been dug out.
 - **Editing** (`Inventory`, `World.setBlock`): the block under the cursor gets a red outline
-  if it isn't air. The 9-slot hotbar starts with a black block in slot 1 (unlimited) and
-  slots 2-9 empty. Edited chunks are marked modified and never unloaded, so changes persist.
+  if it isn't air. The 9-slot hotbar starts with a ground block in slot 1 (unlimited) and
+  slots 2-9 empty (= air). Blocks can't be placed into an entity. Edited chunks are marked
+  modified and never unloaded, so changes persist.
+- **Entities** (`Entity`, `EntityList`, `Creature`, `Vision`): every dynamic body, the player included,
+  shares the same world-collision code. After each step, overlapping entities are pushed apart
+  on the axis of least overlap: sideways split by mass, or lifted on top, so you can stand on
+  creatures. Creatures (orange 1x1) wander and hop up 1-block steps. They see in a 140° cone
+  facing forward, out to 18 blocks, and foreground blocks block their sight (grid-traversal
+  raycast). When one sees the player its eye turns red and it chases them, then keeps going to
+  where it last saw them for 3 s. Up to 6 spawn naturally 30-50 blocks from the player and
+  despawn beyond ~96 blocks. With F3 on, red lines show which creatures see you.
 - **Player** (`Player`): a 1-wide × 2-tall gray box with fixed-timestep (60 Hz) physics,
   coyote time and jump buffering.
-- **Collision** (`CollisionWindow`): each step, only the tiles under the player's swept
+- **Collision** (`CollisionWindow`): each step, only the tiles under an entity's swept
   bounding box (usually 2×3 to 3×4 tiles) are copied into a small reusable array.
   Movement is resolved one axis at a time against that array, so a step costs the same
   however big the world gets, and fast movement can't tunnel through blocks.

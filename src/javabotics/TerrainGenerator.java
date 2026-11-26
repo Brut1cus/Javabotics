@@ -114,7 +114,9 @@ final class TerrainGenerator {
                         if (worm < caveWidth * ramp) solid = false;
                     }
                 }
-                chunk.set(lx, ly, solid ? Chunk.SOLID : Chunk.AIR);
+                byte b = solid ? Chunk.SOLID : Chunk.AIR;
+                chunk.set(lx, ly, b);
+                chunk.setBackground(lx, ly, b);
             }
         }
     }
