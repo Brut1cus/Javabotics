@@ -29,6 +29,12 @@ final class World {
         return c.get(x & Chunk.MASK, y & Chunk.MASK);
     }
 
+    void setBlock(int x, int y, byte block) {
+        Chunk c = chunk(x >> Chunk.SHIFT, y >> Chunk.SHIFT);
+        c.set(x & Chunk.MASK, y & Chunk.MASK, block);
+        c.modified = true;
+    }
+
     boolean isSolid(int x, int y) {
         return getBlock(x, y) != Chunk.AIR;
     }
@@ -44,14 +50,14 @@ final class World {
         return c;
     }
 
-    /** Drops chunks further than {@code radius} chunks (Chebyshev distance) from a block position. */
+    /** Drops unmodified chunks further than {@code radius} chunks (Chebyshev distance) from a block position. */
     void unloadFarFrom(double x, double y, int radius) {
         int pcx = (int) Math.floor(x) >> Chunk.SHIFT;
         int pcy = (int) Math.floor(y) >> Chunk.SHIFT;
         Iterator<Chunk> it = chunks.values().iterator();
         while (it.hasNext()) {
             Chunk c = it.next();
-            if (Math.abs(c.cx - pcx) > radius || Math.abs(c.cy - pcy) > radius) {
+            if (!c.modified && (Math.abs(c.cx - pcx) > radius || Math.abs(c.cy - pcy) > radius)) {
                 if (c == lastChunk) lastChunk = null;
                 it.remove();
             }

@@ -12,6 +12,8 @@ final class Chunk {
     final int cx;
     final int cy;
     private final byte[] blocks = new byte[SIZE * SIZE];
+    /** True once the player has edited this chunk: it is then never unloaded, so edits persist. */
+    boolean modified;
 
     Chunk(int cx, int cy) {
         this.cx = cx;

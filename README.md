@@ -25,6 +25,9 @@ java -jar dist/Javabotics.jar 42       # fixed seed (numbers or any text)
 | W or Space | Jump |
 | Space, Space (double-tap within 300 ms) | Toggle flying |
 | W or Space / S | Fly up / down (while flying) |
+| Left click | Mine (destroy) the block under the cursor |
+| Right click | Place the selected hotbar block in the empty cell under the cursor |
+| 1-9 / mouse wheel / click a slot | Select hotbar slot |
 | F3 | Debug overlay (position, chunk, biome, collision window) |
 | Esc | Quit |
 
@@ -45,6 +48,9 @@ Touching the ground while flying ends flight, as in Minecraft.
   - *Terrain layer*: a 2D density field made of a noise height map plus 2D noise scaled by
     the biome's roughness (overhangs, arches, floating islands). Worm caves are carved
     underground.
+- **Editing** (`Inventory`, `World.setBlock`): the block under the cursor gets a red outline
+  if it isn't air. The 9-slot hotbar starts with a black block in slot 1 (unlimited) and
+  slots 2-9 empty. Edited chunks are marked modified and never unloaded, so changes persist.
 - **Player** (`Player`): a 1-wide × 2-tall gray box with fixed-timestep (60 Hz) physics,
   coyote time and jump buffering.
 - **Collision** (`CollisionWindow`): each step, only the tiles under the player's swept
@@ -52,5 +58,5 @@ Touching the ground while flying ends flight, as in Minecraft.
   Movement is resolved one axis at a time against that array, so a step costs the same
   however big the world gets, and fast movement can't tunnel through blocks.
 - **Camera** (`Game`): edge scrolling. The view stays still until the player enters the
-  8% margin at any screen edge, then it moves just enough to keep the player inside.
+  35% margin at any screen edge, then it moves just enough to keep the player inside.
   Rendering merges runs of blocks in each row into single rectangles.

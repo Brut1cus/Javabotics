@@ -13,15 +13,25 @@ import java.awt.image.BufferStrategy;
 final class Game extends Canvas implements Runnable {
     static final int TILE = 24;               // pixels per block
     static final double DT = 1.0 / 60.0;      // physics step
-    static final double EDGE_MARGIN = 0.08;    // fraction of the view kept as a scroll margin
+    static final double EDGE_MARGIN = 0.35;    // fraction of the view kept as a scroll margin
     static final int UNLOAD_RADIUS = 12;      // chunks kept around the camera
 
     private static final Color PLAYER_COLOR = new Color(128, 128, 128);
     private static final Color HUD_COLOR = new Color(90, 90, 90);
+    private static final Color SELECT_COLOR = new Color(230, 30, 30);
+    private static final Color BAR_COLOR = new Color(150, 150, 150);
+    private static final Color SLOT_COLOR = new Color(195, 195, 195);
+    private static final Color SLOT_BORDER = new Color(105, 105, 105);
+
+    static final int SLOT_SIZE = 44;
+    static final int SLOT_GAP = 6;
+    static final int BAR_PAD = 6;
+    static final int BAR_BOTTOM = 12;
 
     private final World world;
     private final Player player;
     private final Input input = new Input();
+    private final Inventory inventory = new Inventory();
 
     // Camera = world position of the bottom-left corner of the view, in blocks.
     private double camX;
@@ -47,6 +57,11 @@ final class Game extends Canvas implements Runnable {
         setFocusTraversalKeysEnabled(false);
         addKeyListener(input);
         addFocusListener(input.focusListener);
+        addMouseListener(input.mouseListener);
+        addMouseMotionListener(input.mouseListener);
+        addMouseWheelListener(input.mouseListener);
+
+        inventory.set(0, Chunk.SOLID);
     }
 
     void start() {
@@ -111,9 +126,14 @@ final class Game extends Canvas implements Runnable {
                 case KeyEvent.VK_W -> player.onJumpPressed();
                 case KeyEvent.VK_F3 -> showDebug = !showDebug;
                 case KeyEvent.VK_ESCAPE -> System.exit(0);
-                default -> { }
+                default -> {
+                    if (p.keyCode() >= KeyEvent.VK_1 && p.keyCode() <= KeyEvent.VK_9) {
+                        inventory.select(p.keyCode() - KeyEvent.VK_1);
+                    }
+                }
             }
         }
+        for (Input.Click c; (c = input.pollClick()) != null; ) handleClick(c);
 
         int mx = (input.isDown(KeyEvent.VK_D) ? 1 : 0) - (input.isDown(KeyEvent.VK_A) ? 1 : 0);
         int my = 0;
@@ -124,6 +144,70 @@ final class Game extends Canvas implements Runnable {
         }
         player.update(world, DT, mx, my, input.isDown(KeyEvent.VK_SHIFT));
         updateCamera();
+    }
+
+    private void handleClick(Input.Click c) {
+        if (c.wheel() != 0) {
+            inventory.select(inventory.selected() + Integer.signum(c.wheel()));
+            return;
+        }
+        int slot = hotbarSlotAt(c.x(), c.y());
+        if (slot >= 0) {                              // clicks on the hotbar select a slot
+            inventory.select(slot);
+            return;
+        }
+        if (hotbarContains(c.x(), c.y())) return;
+
+        long camPxX = Math.round(camX * TILE);
+        long camPxY = Math.round(camY * TILE);
+        int tx = (int) Math.floorDiv(camPxX + c.x(), TILE);
+        int ty = (int) Math.floorDiv(camPxY + (getHeight() - c.y()), TILE);
+
+        if (c.button() == java.awt.event.MouseEvent.BUTTON1) {
+            if (world.isSolid(tx, ty)) world.setBlock(tx, ty, Chunk.AIR);
+        } else if (c.button() == java.awt.event.MouseEvent.BUTTON3) {
+            byte block = inventory.selectedBlock();
+            if (block != Chunk.AIR && !world.isSolid(tx, ty) && !overlapsPlayer(tx, ty)) {
+                world.setBlock(tx, ty, block);
+            }
+        }
+    }
+
+    private boolean overlapsPlayer(int tx, int ty) {
+        return tx < player.x + Player.WIDTH && tx + 1 > player.x
+                && ty < player.y + Player.HEIGHT && ty + 1 > player.y;
+    }
+
+    // ------------------------------------------------------------------ hotbar layout
+
+    private int barWidth() {
+        return Inventory.SLOTS * SLOT_SIZE + (Inventory.SLOTS - 1) * SLOT_GAP + 2 * BAR_PAD;
+    }
+
+    private int barHeight() {
+        return SLOT_SIZE + 2 * BAR_PAD;
+    }
+
+    private int barX() {
+        return (getWidth() - barWidth()) / 2;
+    }
+
+    private int barY() {
+        return getHeight() - BAR_BOTTOM - barHeight();
+    }
+
+    private boolean hotbarContains(int x, int y) {
+        return x >= barX() && x < barX() + barWidth() && y >= barY() && y < barY() + barHeight();
+    }
+
+    private int hotbarSlotAt(int x, int y) {
+        int sy = barY() + BAR_PAD;
+        if (y < sy || y >= sy + SLOT_SIZE) return -1;
+        for (int i = 0; i < Inventory.SLOTS; i++) {
+            int sx = barX() + BAR_PAD + i * (SLOT_SIZE + SLOT_GAP);
+            if (x >= sx && x < sx + SLOT_SIZE) return i;
+        }
+        return -1;
     }
 
     /** Edge scrolling: the camera moves only when the player enters the margin at a screen edge. */
@@ -222,7 +306,59 @@ final class Game extends Canvas implements Runnable {
         g.setColor(PLAYER_COLOR);
         g.fillRect(psx, psy, (int) (Player.WIDTH * TILE), (int) (Player.HEIGHT * TILE));
 
+        // Block under the cursor: red outline if it is not air.
+        int mxp = input.mouseX();
+        int myp = input.mouseY();
+        if (mxp >= 0 && myp >= 0 && !hotbarContains(mxp, myp)) {
+            int tx = (int) Math.floorDiv(camPxX + mxp, TILE);
+            int ty = (int) Math.floorDiv(camPxY + (h - myp), TILE);
+            if (world.isSolid(tx, ty)) {
+                int sx = (int) ((long) tx * TILE - camPxX);
+                int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
+                g.setColor(SELECT_COLOR);
+                g.setStroke(new java.awt.BasicStroke(3));
+                g.drawRect(sx + 1, sy + 1, TILE - 3, TILE - 3);
+                g.setStroke(new java.awt.BasicStroke(1));
+            }
+        }
+
+        drawHotbar(g);
         drawHud(g, camPxX, camPxY, h);
+    }
+
+    private void drawHotbar(Graphics2D g) {
+        int bx = barX();
+        int by = barY();
+        g.setColor(BAR_COLOR);
+        g.fillRect(bx, by, barWidth(), barHeight());
+        g.setColor(SLOT_BORDER);
+        g.drawRect(bx, by, barWidth() - 1, barHeight() - 1);
+
+        g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 11));
+        for (int i = 0; i < Inventory.SLOTS; i++) {
+            int sx = bx + BAR_PAD + i * (SLOT_SIZE + SLOT_GAP);
+            int sy = by + BAR_PAD;
+            g.setColor(SLOT_COLOR);
+            g.fillRect(sx, sy, SLOT_SIZE, SLOT_SIZE);
+
+            byte block = inventory.get(i);
+            if (block != Chunk.AIR) {
+                int inset = 11;
+                g.setColor(Color.BLACK);
+                g.fillRect(sx + inset, sy + inset, SLOT_SIZE - 2 * inset, SLOT_SIZE - 2 * inset);
+            }
+
+            g.setColor(SLOT_BORDER);
+            g.drawString(Integer.toString(i + 1), sx + 3, sy + 12);
+            if (i == inventory.selected()) {
+                g.setColor(Color.WHITE);
+                g.setStroke(new java.awt.BasicStroke(3));
+                g.drawRect(sx - 1, sy - 1, SLOT_SIZE + 1, SLOT_SIZE + 1);
+                g.setStroke(new java.awt.BasicStroke(1));
+            } else {
+                g.drawRect(sx, sy, SLOT_SIZE - 1, SLOT_SIZE - 1);
+            }
+        }
     }
 
     private void drawHud(Graphics2D g, long camPxX, long camPxY, int h) {
@@ -231,7 +367,7 @@ final class Game extends Canvas implements Runnable {
         int y = 18;
         if (time < 10 && !showDebug) {
             g.setColor(HUD_COLOR);
-            g.drawString("A/D move   Shift sprint   W/Space jump   Space x2 toggle fly (W/Space up, S down)   F3 debug", 10, y);
+            g.drawString("A/D move  Shift sprint  W/Space jump  Space x2 fly  LMB mine  RMB place  1-9 slot  F3 debug", 10, y);
         }
         if (!showDebug) return;
 
