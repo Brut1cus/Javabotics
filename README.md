@@ -21,9 +21,10 @@ java -jar dist/Javabotics.jar 42       # fixed seed (numbers or any text)
 | Key | Action |
 | --- | --- |
 | A / D | Move left / right |
-| Space | Jump |
+| Shift (held) | Sprint (also speeds up flight) |
+| W or Space | Jump |
 | Space, Space (double-tap within 300 ms) | Toggle flying |
-| W / Space, S / Shift | Fly up / down (while flying) |
+| W or Space / S | Fly up / down (while flying) |
 | F3 | Debug overlay (position, chunk, biome, collision window) |
 | Esc | Quit |
 
@@ -51,5 +52,5 @@ Touching the ground while flying ends flight, as in Minecraft.
   Movement is resolved one axis at a time against that array, so a step costs the same
   however big the world gets, and fast movement can't tunnel through blocks.
 - **Camera** (`Game`): edge scrolling. The view stays still until the player enters the
-  20% margin at any screen edge, then it moves just enough to keep the player inside.
+  8% margin at any screen edge, then it moves just enough to keep the player inside.
   Rendering merges runs of blocks in each row into single rectangles.

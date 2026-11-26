@@ -13,7 +13,7 @@ import java.awt.image.BufferStrategy;
 final class Game extends Canvas implements Runnable {
     static final int TILE = 24;               // pixels per block
     static final double DT = 1.0 / 60.0;      // physics step
-    static final double EDGE_MARGIN = 0.2;    // fraction of the view kept as a scroll margin
+    static final double EDGE_MARGIN = 0.08;    // fraction of the view kept as a scroll margin
     static final int UNLOAD_RADIUS = 12;      // chunks kept around the camera
 
     private static final Color PLAYER_COLOR = new Color(128, 128, 128);
@@ -108,6 +108,7 @@ final class Game extends Canvas implements Runnable {
         for (Input.Press p; (p = input.pollPress()) != null; ) {
             switch (p.keyCode()) {
                 case KeyEvent.VK_SPACE -> player.onSpacePressed(p.when());
+                case KeyEvent.VK_W -> player.onJumpPressed();
                 case KeyEvent.VK_F3 -> showDebug = !showDebug;
                 case KeyEvent.VK_ESCAPE -> System.exit(0);
                 default -> { }
@@ -118,10 +119,10 @@ final class Game extends Canvas implements Runnable {
         int my = 0;
         if (player.flying) {
             boolean up = input.isDown(KeyEvent.VK_W) || input.isDown(KeyEvent.VK_SPACE);
-            boolean down = input.isDown(KeyEvent.VK_S) || input.isDown(KeyEvent.VK_SHIFT);
+            boolean down = input.isDown(KeyEvent.VK_S);
             my = (up ? 1 : 0) - (down ? 1 : 0);
         }
-        player.update(world, DT, mx, my);
+        player.update(world, DT, mx, my, input.isDown(KeyEvent.VK_SHIFT));
         updateCamera();
     }
 
@@ -144,7 +145,7 @@ final class Game extends Canvas implements Runnable {
     }
 
     private static double follow(double cam, double pos, double size, double view) {
-        double margin = Math.max(2, view * EDGE_MARGIN);
+        double margin = Math.max(1.5, view * EDGE_MARGIN);
         if (2 * margin + size > view) {              // tiny window: just centre
             return pos + size / 2 - view / 2;
         }
@@ -230,7 +231,7 @@ final class Game extends Canvas implements Runnable {
         int y = 18;
         if (time < 10 && !showDebug) {
             g.setColor(HUD_COLOR);
-            g.drawString("A/D move   Space jump   Space x2 toggle fly (W/S or Space/Shift)   F3 debug", 10, y);
+            g.drawString("A/D move   Shift sprint   W/Space jump   Space x2 toggle fly (W/Space up, S down)   F3 debug", 10, y);
         }
         if (!showDebug) return;
 

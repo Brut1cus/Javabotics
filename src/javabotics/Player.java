@@ -12,12 +12,14 @@ final class Player {
     static final double GRAVITY = 34;
     static final double JUMP_SPEED = 10.2;       // ~1.5 block jump
     static final double MAX_FALL = 45;
-    static final double WALK_SPEED = 6.5;
+    static final double WALK_SPEED = 8.5;
+    static final double SPRINT_SPEED = 13;
     static final double GROUND_ACCEL = 70;
     static final double AIR_ACCEL = 30;
-    static final double FLY_SPEED = 12;
-    static final double FLY_VERTICAL = 9;
-    static final double FLY_ACCEL = 60;
+    static final double FLY_SPEED = 15;
+    static final double FLY_SPRINT_SPEED = 24;
+    static final double FLY_VERTICAL = 11;
+    static final double FLY_ACCEL = 75;
     static final double COYOTE_TIME = 0.08;
     static final double JUMP_BUFFER = 0.12;
     static final long DOUBLE_TAP_MS = 300;
@@ -57,22 +59,28 @@ final class Player {
         }
     }
 
+    /** Called for each discrete W press: a plain jump (no double-tap flight toggle). */
+    void onJumpPressed() {
+        if (!flying) jumpBuffer = JUMP_BUFFER;
+    }
+
     /**
      * Advances one fixed physics step.
      *
      * @param moveX -1, 0 or 1 (A / D)
-     * @param moveY -1, 0 or 1 (S / W, plus Space and Shift while flying)
+     * @param moveY -1, 0 or 1 (S / W and Space while flying)
+     * @param sprint whether Shift is held
      */
-    void update(World world, double dt, int moveX, int moveY) {
+    void update(World world, double dt, int moveX, int moveY, boolean sprint) {
         prevX = x;
         prevY = y;
 
         if (flying) {
-            vx = approach(vx, moveX * FLY_SPEED, FLY_ACCEL * dt);
+            vx = approach(vx, moveX * (sprint ? FLY_SPRINT_SPEED : FLY_SPEED), FLY_ACCEL * dt);
             vy = approach(vy, moveY * FLY_VERTICAL, FLY_ACCEL * dt);
         } else {
             double accel = onGround ? GROUND_ACCEL : AIR_ACCEL;
-            vx = approach(vx, moveX * WALK_SPEED, accel * dt);
+            vx = approach(vx, moveX * (sprint ? SPRINT_SPEED : WALK_SPEED), accel * dt);
             vy = Math.max(vy - GRAVITY * dt, -MAX_FALL);
 
             coyote = onGround ? COYOTE_TIME : coyote - dt;
