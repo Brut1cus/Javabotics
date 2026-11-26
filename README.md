@@ -27,7 +27,7 @@ java -jar dist/Javabotics.jar 42       # fixed seed (numbers or any text)
 | W or Space / S | Fly up / down (while flying) |
 | Left click (hold to paint) | Place the selected slot's contents at the cursor: a block goes anywhere (even mid-air); an empty slot is air, so it removes the block |
 | Right click (hold to paint) | Shortcut: always removes the block under the cursor |
-| Tab | Switch which layer (foreground / background) is in front and edited |
+| Tab | Swap the black and blue layers: the front one is drawn on top, edited, and collidable |
 | E | Spawn a creature at the cursor |
 | 1-9 / mouse wheel / click a slot | Select hotbar slot |
 | F3 | Debug overlay (position, chunk, biome, collision window) |
@@ -50,18 +50,19 @@ Touching the ground while flying ends flight, as in Minecraft.
   - *Terrain layer*: a 2D density field made of a noise height map plus 2D noise scaled by
     the biome's roughness (overhangs, arches, floating islands). Worm caves are carved
     underground.
-- **Layers** (`Chunk`): each chunk has a *foreground* (the layer everything collides with)
-  and a *background* (visual only for now). Both start as a copy of the generated terrain and
-  both are editable. Tab switches which layer is in front and edited:
-  - *Foreground mode*: foreground ground is black, background ground shows light blue behind it.
-  - *Background mode*: background ground is drawn in front in #003278, foreground ground black behind it.
+- **Layers** (`World`, `Chunk`): two block layers, **black** and **blue**. Both start as a copy
+  of the generated terrain. Tab swaps which one is in *front*. The front layer is drawn on top,
+  it's the one you edit, and it's the only one with collision, for the player and creatures
+  and for creature vision. The other layer sits behind as scenery in its own colour (blue =
+  #003278). If switching layers leaves an entity inside a block, it's lifted to the nearest free
+  spot within 4 blocks above.
 - **Blocks** (`Block`): Ground (terrain), plus three walker parts placed from the hotbar (never
   generated): *Joint* (will be a powered connection between two sides), *Scaffold* (an open
   frame that will never be part of a walker; it keeps blocks apart) and *Hull Core* (will open
   the walker-assembly GUI). These three are **linked**: placing one fills that cell in both
   layers, and removing or replacing it from either layer clears both. Walkers can then have two
   parallel sets of legs, one per layer, joined through shared joints and the core. All
-  foreground non-air blocks are solid for now.
+  non-air blocks in the front layer are solid.
 - **Editing** (`Inventory`, `World.setBlock`): the block under the cursor gets a red outline
   if it isn't air. The 9-slot hotbar starts with Ground, Joint, Scaffold and Hull Core in
   slots 1-4 (unlimited) and slots 5-9 empty (= air). Holding a mouse button keeps editing every tile the

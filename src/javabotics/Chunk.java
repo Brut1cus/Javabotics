@@ -1,12 +1,8 @@
 package javabotics;
 
 /**
- * A 16x16 square of blocks with two layers. World y grows upward.
- * <ul>
- *   <li><b>Foreground</b>: the editable blocks the player and creatures collide with.</li>
- *   <li><b>Background</b>: a purely visual copy of the terrain as originally generated. It is
- *       never edited and has no collision; it shows through wherever foreground is air.</li>
- * </ul>
+ * A 16x16 square of blocks with two layers, the black layer and the blue layer (see
+ * {@link World}). World y grows upward.
  */
 final class Chunk {
     static final int SIZE = 16;
@@ -17,8 +13,7 @@ final class Chunk {
 
     final int cx;
     final int cy;
-    private final byte[] blocks = new byte[SIZE * SIZE];
-    private final byte[] background = new byte[SIZE * SIZE];
+    private final byte[][] layers = {new byte[SIZE * SIZE], new byte[SIZE * SIZE]};
     /** True once the player has edited this chunk: it is then never unloaded, so edits persist. */
     boolean modified;
 
@@ -27,20 +22,12 @@ final class Chunk {
         this.cy = cy;
     }
 
-    byte get(int lx, int ly) {
-        return blocks[(ly << SHIFT) | lx];
+    byte get(int layer, int lx, int ly) {
+        return layers[layer][(ly << SHIFT) | lx];
     }
 
-    void set(int lx, int ly, byte b) {
-        blocks[(ly << SHIFT) | lx] = b;
-    }
-
-    byte getBackground(int lx, int ly) {
-        return background[(ly << SHIFT) | lx];
-    }
-
-    void setBackground(int lx, int ly, byte b) {
-        background[(ly << SHIFT) | lx] = b;
+    void set(int layer, int lx, int ly, byte b) {
+        layers[layer][(ly << SHIFT) | lx] = b;
     }
 
     static long key(int cx, int cy) {

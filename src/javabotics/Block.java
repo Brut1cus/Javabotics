@@ -49,21 +49,19 @@ final class Block {
         };
     }
 
-    /** Opaque blocks completely hide the background layer behind them. */
-    static boolean isOpaque(byte b) {
-        return b == GROUND || b == JOINT || b == HULL_CORE;
-    }
-
     /** Linked blocks always occupy both layers at once. */
     static boolean isLinked(byte b) {
         return b == JOINT || b == SCAFFOLD || b == HULL_CORE;
     }
 
-    /** Draws one block of type {@code b} into the square at (x, y) with side {@code s} pixels. */
-    static void draw(Graphics2D g, byte b, int x, int y, int s) {
+    /**
+     * Draws one block of type {@code b} into the square at (x, y) with side {@code s} pixels.
+     * Ground takes the colour of its layer ({@code groundColor}); parts look the same in both.
+     */
+    static void draw(Graphics2D g, byte b, int x, int y, int s, Color groundColor) {
         switch (b) {
             case GROUND -> {
-                g.setColor(Color.BLACK);
+                g.setColor(groundColor != null ? groundColor : Color.BLACK);
                 g.fillRect(x, y, s, s);
             }
             case JOINT -> {

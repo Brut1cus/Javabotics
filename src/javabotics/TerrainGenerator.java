@@ -115,8 +115,8 @@ final class TerrainGenerator {
                     }
                 }
                 byte b = solid ? Block.GROUND : Block.AIR;
-                chunk.set(lx, ly, b);
-                chunk.setBackground(lx, ly, b);
+                chunk.set(World.BLACK, lx, ly, b);
+                chunk.set(World.BLUE, lx, ly, b);
             }
         }
     }

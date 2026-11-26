@@ -19,9 +19,8 @@ final class Game extends Canvas implements Runnable {
 
     private static final Color PLAYER_COLOR = new Color(128, 128, 128);
     private static final Color HUD_COLOR = new Color(90, 90, 90);
-    private static final Color BACKGROUND_COLOR = new Color(196, 220, 250);
-    // Background-editing mode palette.
-    private static final Color BG_MODE_BACKGROUND = new Color(0x00, 0x32, 0x78);   // #003278
+    /** Colour of ground blocks in each layer, indexed by {@link World#BLACK} / {@link World#BLUE}. */
+    private static final Color[] LAYER_COLOR = {Color.BLACK, new Color(0x00, 0x32, 0x78)}; // #003278
     private static final Color CREATURE_COLOR = new Color(205, 110, 40);
     private static final Color SELECT_COLOR = new Color(230, 30, 30);
     private static final Color BAR_COLOR = new Color(150, 150, 150);
@@ -47,8 +46,6 @@ final class Game extends Canvas implements Runnable {
     private boolean cameraInitialised;
 
     private boolean showDebug;
-    /** Tab toggles which layer the mouse edits. */
-    private boolean editBackground;
 
     // Hold-to-paint state, indexed by mouse button (1 = left, 3 = right).
     private final boolean[] painting = new boolean[4];
@@ -145,7 +142,7 @@ final class Game extends Canvas implements Runnable {
                 case KeyEvent.VK_W -> player.onJumpPressed();
                 case KeyEvent.VK_F3 -> showDebug = !showDebug;
                 case KeyEvent.VK_E -> spawnCreatureAtCursor();
-                case KeyEvent.VK_TAB -> editBackground = !editBackground;
+                case KeyEvent.VK_TAB -> switchLayer();
                 case KeyEvent.VK_ESCAPE -> System.exit(0);
                 default -> {
                     if (p.keyCode() >= KeyEvent.VK_1 && p.keyCode() <= KeyEvent.VK_9) {
@@ -239,25 +236,44 @@ final class Game extends Canvas implements Runnable {
      */
     private void applyEdit(int button, int tx, int ty) {
         byte block = button == MouseEvent.BUTTON1 ? inventory.selectedBlock() : Block.AIR;
-        byte current = editBackground ? world.getBackground(tx, ty) : world.getBlock(tx, ty);
+        int front = world.frontLayer();
+        byte current = world.getBlock(front, tx, ty);
         if (current == block) return;
-        boolean linked = Block.isLinked(block);
-        // Anything that ends up in the foreground must not be placed into an entity.
-        if ((linked || (!editBackground && block != Block.AIR)) && entities.anyOverlapsTile(tx, ty)) return;
+        // The front layer is solid, so nothing may be placed into an entity.
+        if (block != Block.AIR && entities.anyOverlapsTile(tx, ty)) return;
 
-        if (linked) {
+        if (Block.isLinked(block)) {
             // Linked blocks occupy the cell in both layers.
-            world.setBlock(tx, ty, block);
-            world.setBackground(tx, ty, block);
+            world.setBlock(World.BLACK, tx, ty, block);
+            world.setBlock(World.BLUE, tx, ty, block);
             return;
         }
         if (Block.isLinked(current)) {
             // Removing or replacing a linked block clears it from both layers.
-            world.setBlock(tx, ty, Block.AIR);
-            world.setBackground(tx, ty, Block.AIR);
+            world.setBlock(World.BLACK, tx, ty, Block.AIR);
+            world.setBlock(World.BLUE, tx, ty, Block.AIR);
         }
-        if (editBackground) world.setBackground(tx, ty, block);
-        else world.setBlock(tx, ty, block);
+        world.setBlock(front, tx, ty, block);
+    }
+
+    /**
+     * Tab: brings the other layer to the front. Collision follows the front layer, so anyone
+     * now embedded in a block is lifted to the nearest free spot just above (up to 4 blocks);
+     * if there is none they stay put and can dig themselves out.
+     */
+    private void switchLayer() {
+        world.setFrontLayer(world.backLayer());
+        for (Entity e : entities) {
+            if (!e.insideBlock(world)) continue;
+            double startY = e.y;
+            for (int lift = 1; lift <= 4; lift++) {
+                e.y = Math.floor(startY) + lift;
+                if (!e.insideBlock(world)) break;
+            }
+            if (e.insideBlock(world)) e.y = startY;
+            e.prevY = e.y;
+            e.vy = 0;
+        }
     }
 
     private void spawnCreatureAtCursor() {
@@ -378,26 +394,19 @@ final class Game extends Canvas implements Runnable {
         int tx1 = (int) Math.floorDiv(camPxX + w, TILE);
         int ty1 = (int) Math.floorDiv(camPxY + h, TILE);
 
-        if (editBackground) {
-            // Background mode: the background layer comes to the front. Foreground ground is
-            // black behind it; background ground is #003278 on top.
-            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
-                    (x, y) -> world.getBlock(x, y) == Block.GROUND ? 1 : 0, new Color[] {null, Color.BLACK});
-            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
-                    (x, y) -> world.getBackground(x, y) == Block.GROUND ? 1 : 0, new Color[] {null, BG_MODE_BACKGROUND});
-        } else {
-            // Foreground mode: light-blue background ground behind, black foreground ground in front.
-            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
-                    (x, y) -> showsBackground(x, y) ? 1 : 0, new Color[] {null, BACKGROUND_COLOR});
-            drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
-                    (x, y) -> world.getBlock(x, y) == Block.GROUND ? 1 : 0, new Color[] {null, Color.BLACK});
-        }
+        // Back layer first, front layer on top. Each layer keeps its own colour.
+        int back = world.backLayer();
+        int front = world.frontLayer();
+        drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
+                (x, y) -> world.getBlock(back, x, y) == Block.GROUND ? 1 : 0, new Color[] {null, LAYER_COLOR[back]});
+        drawRuns(g, tx0, ty0, tx1, ty1, camPxX, camPxY, h,
+                (x, y) -> world.getBlock(front, x, y) == Block.GROUND ? 1 : 0, new Color[] {null, LAYER_COLOR[front]});
         // Linked parts (joint, scaffold, hull core) live in both layers: drawn on top in either mode.
         for (int ty = ty0; ty <= ty1; ty++) {
             int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
             for (int tx = tx0; tx <= tx1; tx++) {
                 byte b = world.getBlock(tx, ty);
-                if (Block.isLinked(b)) Block.draw(g, b, (int) ((long) tx * TILE - camPxX), sy, TILE);
+                if (Block.isLinked(b)) Block.draw(g, b, (int) ((long) tx * TILE - camPxX), sy, TILE, null);
             }
         }
 
@@ -432,7 +441,7 @@ final class Game extends Canvas implements Runnable {
         if (mxp >= 0 && myp >= 0 && !hotbarContains(mxp, myp)) {
             int tx = (int) Math.floorDiv(camPxX + mxp, TILE);
             int ty = (int) Math.floorDiv(camPxY + (h - myp), TILE);
-            byte under = editBackground ? world.getBackground(tx, ty) : world.getBlock(tx, ty);
+            byte under = world.getBlock(tx, ty);
             if (under != Block.AIR) {
                 int sx = (int) ((long) tx * TILE - camPxX);
                 int sy = (int) (h - ((long) (ty + 1) * TILE - camPxY));
@@ -446,10 +455,6 @@ final class Game extends Canvas implements Runnable {
         drawHotbar(g);
         drawEditLabel(g);
         drawHud(g, camPxX, camPxY, h);
-    }
-
-    private boolean showsBackground(int tx, int ty) {
-        return world.getBackground(tx, ty) == Block.GROUND && !Block.isOpaque(world.getBlock(tx, ty));
     }
 
     /**
@@ -491,7 +496,7 @@ final class Game extends Canvas implements Runnable {
             byte block = inventory.get(i);
             if (block != Block.AIR) {
                 int inset = 10;
-                Block.draw(g, block, sx + inset, sy + inset, SLOT_SIZE - 2 * inset);
+                Block.draw(g, block, sx + inset, sy + inset, SLOT_SIZE - 2 * inset, LAYER_COLOR[world.frontLayer()]);
             }
 
             g.setColor(SLOT_BORDER);
@@ -510,14 +515,14 @@ final class Game extends Canvas implements Runnable {
     /** Small label above the hotbar: the selected block and the layer being edited. */
     private void drawEditLabel(Graphics2D g) {
         byte sel = inventory.selectedBlock();
-        String text = (editBackground ? "Background" : "Foreground") + " \u00b7 " + Block.name(sel)
+        String text = (world.frontLayer() == World.BLACK ? "Black layer" : "Blue layer") + " \u00b7 " + Block.name(sel)
                 + (Block.isLinked(sel) ? " (both layers)" : "");
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 12));
         int tw = g.getFontMetrics().stringWidth(text);
         int lx = (getWidth() - tw) / 2 - 8;
         int ly = barY() - 26;
-        g.setColor(editBackground ? BG_MODE_BACKGROUND : BAR_COLOR);
+        g.setColor(LAYER_COLOR[world.frontLayer()]);
         g.fillRect(lx, ly, tw + 16, 20);
         g.setColor(Color.WHITE);
         g.drawString(text, lx + 8, ly + 14);
@@ -557,6 +562,7 @@ final class Game extends Canvas implements Runnable {
                 "Chunk: " + Math.floorDiv(bx, Chunk.SIZE) + ", " + Math.floorDiv((int) Math.floor(player.y), Chunk.SIZE),
                 "Biome: " + world.generator().biomeAt(bx).displayName()
                         + " (region " + world.generator().regionOfChunk(Math.floorDiv(bx, Chunk.SIZE)) + ")",
+                "Front layer: " + (world.frontLayer() == World.BLACK ? "black" : "blue"),
                 "Mode: " + (player.flying ? "flying" : (player.onGround ? "on ground" : "airborne")),
                 "Collision window: " + cw.width() + "x" + cw.height() + " tiles",
                 "Entities: " + entities.size(),

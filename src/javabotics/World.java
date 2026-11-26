@@ -4,11 +4,21 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-/** Infinite chunked world. Chunks are generated lazily and unloaded when far away. */
+/**
+ * Infinite chunked world with two block layers: the <b>black</b> layer and the <b>blue</b>
+ * layer. Both start as a copy of the generated terrain. Exactly one layer is in <em>front</em>
+ * at a time: it is drawn on top, it is the one the player edits, and it is the only one with
+ * collision. The other layer sits behind as scenery. Chunks are generated lazily and unloaded
+ * when far away.
+ */
 final class World {
+    static final int BLACK = 0;
+    static final int BLUE = 1;
+
     private final Map<Long, Chunk> chunks = new HashMap<>();
     private final TerrainGenerator generator;
     private Chunk lastChunk; // one-entry cache: consecutive lookups usually hit the same chunk
+    private int front = BLACK;
 
     World(long seed) {
         this.generator = new TerrainGenerator(seed);
@@ -18,42 +28,43 @@ final class World {
         return generator;
     }
 
+    int frontLayer() {
+        return front;
+    }
+
+    int backLayer() {
+        return 1 - front;
+    }
+
+    void setFrontLayer(int layer) {
+        front = layer;
+    }
+
+    byte getBlock(int layer, int x, int y) {
+        int cx = x >> Chunk.SHIFT;
+        int cy = y >> Chunk.SHIFT;
+        Chunk c = lastChunk;
+        if (c == null || c.cx != cx || c.cy != cy) {
+            c = chunk(cx, cy);
+            lastChunk = c;
+        }
+        return c.get(layer, x & Chunk.MASK, y & Chunk.MASK);
+    }
+
+    /** Block in the front layer. */
     byte getBlock(int x, int y) {
-        int cx = x >> Chunk.SHIFT;
-        int cy = y >> Chunk.SHIFT;
-        Chunk c = lastChunk;
-        if (c == null || c.cx != cx || c.cy != cy) {
-            c = chunk(cx, cy);
-            lastChunk = c;
-        }
-        return c.get(x & Chunk.MASK, y & Chunk.MASK);
+        return getBlock(front, x, y);
     }
 
-    byte getBackground(int x, int y) {
-        int cx = x >> Chunk.SHIFT;
-        int cy = y >> Chunk.SHIFT;
-        Chunk c = lastChunk;
-        if (c == null || c.cx != cx || c.cy != cy) {
-            c = chunk(cx, cy);
-            lastChunk = c;
-        }
-        return c.getBackground(x & Chunk.MASK, y & Chunk.MASK);
-    }
-
-    void setBlock(int x, int y, byte block) {
+    void setBlock(int layer, int x, int y, byte block) {
         Chunk c = chunk(x >> Chunk.SHIFT, y >> Chunk.SHIFT);
-        c.set(x & Chunk.MASK, y & Chunk.MASK, block);
+        c.set(layer, x & Chunk.MASK, y & Chunk.MASK, block);
         c.modified = true;
     }
 
-    void setBackground(int x, int y, byte block) {
-        Chunk c = chunk(x >> Chunk.SHIFT, y >> Chunk.SHIFT);
-        c.setBackground(x & Chunk.MASK, y & Chunk.MASK, block);
-        c.modified = true;
-    }
-
+    /** Collision: only the front layer is solid. */
     boolean isSolid(int x, int y) {
-        return getBlock(x, y) != Chunk.AIR;
+        return getBlock(front, x, y) != Block.AIR;
     }
 
     Chunk chunk(int cx, int cy) {
